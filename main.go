@@ -9,34 +9,118 @@ import (
 	"time"
 )
 
+type Task struct {
+	ID        int
+	Task      string
+	Status    int
+	Created   time.Time
+	Completed *time.Time // Pointer to handle NULL values
+}
+
 func main() {
-	// Ensure environment variables are set correctly
-	db, err := sql.Open("mysql", "root:password@tcp(127.0.0.1:3306)/db")
+	db, err := sql.Open("mysql", "root:ayush@tcp(127.0.0.1:3306)/todolist?parseTime=true")
+
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	// Parse the flag for task to add
-	task := flag.String("add", "GoGym", "adds task")
+	task := flag.String("add", "", "adds task")
+	status := flag.Bool("done", false, "mark task as completed")
+	id := flag.Int("id", 0, "id of task")
+	list := flag.Bool("list", false, "list all tasks")
+	//delete := flag.Bool("delete", false, "delete task")
 	flag.Parse()
 
-	// Dummy ID (for simplicity)
-	ID := 1
+	// Adding a task
+	if *task != "" {
+		stmt, err := db.Prepare("INSERT INTO tasks (task, status, created) VALUES (?, ?, ?)")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer stmt.Close()
 
-	// Prepare the SQL statement
-	stmt, err := db.Prepare("INSERT INTO tasks (ID, task, status, Created) VALUES (?, ?, ?, ?)")
-	if err != nil {
-		panic(err.Error())
+		_, err = stmt.Exec(*task, 0, time.Now())
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Task added successfully!")
 	}
-	defer stmt.Close()
 
-	// Execute the statement
-	_, err = stmt.Exec(ID, *task, 0, time.Now())
-	if err != nil {
-		panic(err.Error())
+	// Updating task status
+	if *status {
+		if *id == 0 {
+			log.Fatal("Please provide a valid task ID using -id flag")
+		}
+
+		stmt, err := db.Prepare("UPDATE tasks SET status=?, completed=? WHERE ID=?")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer stmt.Close()
+
+		_, err = stmt.Exec(1, time.Now(), *id)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Task updated successfully!")
 	}
 
-	// Success message
-	fmt.Println("Task added successfully!")
+	// Listing tasks
+	if *list {
+		rows, err := db.Query("SELECT ID, task, status, created, completed FROM tasks")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer rows.Close()
+
+		var tasks []Task
+		for rows.Next() {
+			var t Task
+			var created time.Time
+			var completed sql.NullTime
+
+			err := rows.Scan(
+				&t.ID,
+				&t.Task,
+				&t.Status,
+				&created,
+				&completed,
+			)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			t.Created = created
+			if completed.Valid {
+				t.Completed = &completed.Time
+			}
+
+			tasks = append(tasks, t)
+		}
+
+		if err = rows.Err(); err != nil {
+			log.Fatal(err)
+		}
+
+		if len(tasks) == 0 {
+			fmt.Println("No tasks found.")
+		} else {
+			fmt.Println("Tasks List:")
+			for _, t := range tasks {
+				completedTime := "Not completed"
+				if t.Completed != nil {
+					completedTime = t.Completed.Format(time.RFC822)
+				}
+				fmt.Printf(
+					"ID: %d, Task: %s, Status: %d, Created: %s, Completed: %s\n",
+					t.ID,
+					t.Task,
+					t.Status,
+					t.Created.Format(time.RFC822),
+					completedTime,
+				)
+			}
+		}
+	}
 }
