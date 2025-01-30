@@ -29,7 +29,7 @@ func main() {
 	status := flag.Bool("done", false, "mark task as completed")
 	id := flag.Int("id", 0, "id of task")
 	list := flag.Bool("list", false, "list all tasks")
-	//delete := flag.Bool("delete", false, "delete task")
+	remove := flag.Bool("delete", false, "delete task")
 	flag.Parse()
 
 	// Adding a task
@@ -121,6 +121,25 @@ func main() {
 					completedTime,
 				)
 			}
+		}
+	}
+
+	if *remove {
+		if *id == 0 {
+			log.Fatal("Please provide a valid task ID using -id flag")
+		}
+
+		stmt, err := db.Prepare("DELETE FROM tasks WHERE ID=?")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer stmt.Close()
+		_, err = stmt.Exec(*id)
+
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			fmt.Println("Task removed successfully!")
 		}
 	}
 }
