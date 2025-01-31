@@ -41,7 +41,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	db, err := sql.Open("mysql", "root:ayush@tcp(127.0.0.1:3306)/todolist?parseTime=true")
+	db, err := sql.Open("mysql", "root:password@tcp(127.0.0.1:3306)/todolist?parseTime=true")
 	if err != nil {
 		log.Fatal(err)
 	}
