@@ -6,6 +6,7 @@ import (
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -14,12 +15,33 @@ type Task struct {
 	Task      string
 	Status    int
 	Created   time.Time
-	Completed *time.Time // Pointer to handle NULL values
+	Completed *time.Time
+}
+
+func printLine(width map[string]int) {
+	fmt.Print(" ")
+	for _, w := range []string{"id", "task", "status", "created", "completed"} {
+		fmt.Print(strings.Repeat(" ", width[w]+2) + " ")
+	}
+	fmt.Println()
+}
+
+func printRow(id, task, status, created, completed string, width map[string]int) {
+	fmt.Printf(" %-*s  %-*s  %-*s  %-*s  %-*s \n",
+		width["id"], id,
+		width["task"], task,
+		width["status"], status,
+		width["created"], created,
+		width["completed"], completed)
 }
 
 func main() {
-	db, err := sql.Open("mysql", "root:ayush@tcp(127.0.0.1:3306)/todolist?parseTime=true")
+	ist, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		log.Fatal(err)
+	}
 
+	db, err := sql.Open("mysql", "root:ayush@tcp(127.0.0.1:3306)/todolist?parseTime=true")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -30,16 +52,15 @@ func main() {
 	id := flag.Int("id", 0, "id of task")
 	list := flag.Bool("list", false, "list all tasks")
 	remove := flag.Bool("delete", false, "delete task")
+	listAll := flag.Bool("all", false, "list all tasks including completed")
 	flag.Parse()
 
-	// Adding a task
 	if *task != "" {
 		stmt, err := db.Prepare("INSERT INTO tasks (task, status, created) VALUES (?, ?, ?)")
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer stmt.Close()
-
 		_, err = stmt.Exec(*task, 0, time.Now())
 		if err != nil {
 			log.Fatal(err)
@@ -47,18 +68,15 @@ func main() {
 		fmt.Println("Task added successfully!")
 	}
 
-	// Updating task status
 	if *status {
 		if *id == 0 {
 			log.Fatal("Please provide a valid task ID using -id flag")
 		}
-
 		stmt, err := db.Prepare("UPDATE tasks SET status=?, completed=? WHERE ID=?")
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer stmt.Close()
-
 		_, err = stmt.Exec(1, time.Now(), *id)
 		if err != nil {
 			log.Fatal(err)
@@ -66,20 +84,32 @@ func main() {
 		fmt.Println("Task updated successfully!")
 	}
 
-	// Listing tasks
 	if *list {
-		rows, err := db.Query("SELECT ID, task, status, created, completed FROM tasks")
+		var query string
+		if *listAll {
+			query = "SELECT ID, task, status, created, completed FROM tasks"
+		} else {
+			query = "SELECT ID, task, status, created, completed FROM tasks WHERE status = 0"
+		}
+		rows, err := db.Query(query)
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer rows.Close()
 
 		var tasks []Task
+		width := map[string]int{
+			"id":        2,
+			"task":      4,
+			"status":    7,
+			"created":   19,
+			"completed": 19,
+		}
+
 		for rows.Next() {
 			var t Task
 			var created time.Time
 			var completed sql.NullTime
-
 			err := rows.Scan(
 				&t.ID,
 				&t.Task,
@@ -90,15 +120,21 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
-
 			t.Created = created
 			if completed.Valid {
 				t.Completed = &completed.Time
+			} else {
+				t.Completed = nil
 			}
-
 			tasks = append(tasks, t)
-		}
 
+			if w := len(fmt.Sprintf("%d", t.ID)); w > width["id"] {
+				width["id"] = w
+			}
+			if w := len(t.Task); w > width["task"] {
+				width["task"] = w
+			}
+		}
 		if err = rows.Err(); err != nil {
 			log.Fatal(err)
 		}
@@ -106,21 +142,35 @@ func main() {
 		if len(tasks) == 0 {
 			fmt.Println("No tasks found.")
 		} else {
-			fmt.Println("Tasks List:")
+			printLine(width)
+			printRow("ID", "Task", "Status", "Created", "Completed", width)
+			printLine(width)
+
 			for _, t := range tasks {
-				completedTime := "Not completed"
+				createdIST := t.Created.In(ist)
+				var completedTime string
 				if t.Completed != nil {
-					completedTime = t.Completed.Format(time.RFC822)
+					completedIST := t.Completed.In(ist)
+					completedTime = completedIST.Format("02 Jan 06 15:04 IST")
+				} else {
+					completedTime = "Not completed"
 				}
-				fmt.Printf(
-					"ID: %d, Task: %s, Status: %d, Created: %s, Completed: %s\n",
-					t.ID,
+
+				status := "Pending"
+				if t.Status == 1 {
+					status = "Done"
+				}
+
+				printRow(
+					fmt.Sprintf("%d", t.ID),
 					t.Task,
-					t.Status,
-					t.Created.Format(time.RFC822),
+					status,
+					createdIST.Format("02 Jan 06 15:04 IST"),
 					completedTime,
+					width,
 				)
 			}
+			printLine(width)
 		}
 	}
 
@@ -128,14 +178,12 @@ func main() {
 		if *id == 0 {
 			log.Fatal("Please provide a valid task ID using -id flag")
 		}
-
 		stmt, err := db.Prepare("DELETE FROM tasks WHERE ID=?")
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer stmt.Close()
 		_, err = stmt.Exec(*id)
-
 		if err != nil {
 			log.Fatal(err)
 		} else {
