@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
 	"log"
+	_ "modernc.org/sqlite"
 	"strings"
 	"time"
 )
@@ -41,18 +41,32 @@ func main() {
 		log.Fatal(err)
 	}
 
-	db, err := sql.Open("mysql", "root:password@tcp(127.0.0.1:3306)/todolist?parseTime=true")
+	// Connect to SQLite database
+	db, err := sql.Open("sqlite", "file:todolist.db?cache=shared&mode=rwc")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS tasks (
+			ID INTEGER PRIMARY KEY,
+			task TEXT NOT NULL,
+			status INTEGER NOT NULL DEFAULT 0,
+			created DATETIME NOT NULL,
+			completed DATETIME
+		)
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	task := flag.String("add", "", "adds task")
 	status := flag.Bool("done", false, "mark task as completed")
 	id := flag.Int("id", 0, "id of task")
 	list := flag.Bool("list", false, "list all tasks")
 	remove := flag.Bool("delete", false, "delete task")
-	listAll := flag.Bool("all", false, "list all tasks including completed")
+	All := flag.Bool("all", false, "list all tasks including completed")
 	flag.Parse()
 
 	if *task != "" {
@@ -61,7 +75,7 @@ func main() {
 			log.Fatal(err)
 		}
 		defer stmt.Close()
-		_, err = stmt.Exec(*task, 0, time.Now())
+		_, err = stmt.Exec(*task, 0, time.Now().UTC())
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -77,7 +91,7 @@ func main() {
 			log.Fatal(err)
 		}
 		defer stmt.Close()
-		_, err = stmt.Exec(1, time.Now(), *id)
+		_, err = stmt.Exec(1, time.Now().UTC(), *id)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -86,7 +100,7 @@ func main() {
 
 	if *list {
 		var query string
-		if *listAll {
+		if *All {
 			query = "SELECT ID, task, status, created, completed FROM tasks"
 		} else {
 			query = "SELECT ID, task, status, created, completed FROM tasks WHERE status = 0"
@@ -175,19 +189,27 @@ func main() {
 	}
 
 	if *remove {
-		if *id == 0 {
-			log.Fatal("Please provide a valid task ID using -id flag")
-		}
-		stmt, err := db.Prepare("DELETE FROM tasks WHERE ID=?")
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer stmt.Close()
-		_, err = stmt.Exec(*id)
-		if err != nil {
-			log.Fatal(err)
+		if *remove && *All {
+			_, err := db.Exec("DELETE FROM tasks")
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Println("All tasks deleted successfully!")
 		} else {
-			fmt.Println("Task removed successfully!")
+			if *id == 0 {
+				log.Fatal("Please provide a valid task ID using -id flag")
+			}
+			stmt, err := db.Prepare("DELETE FROM tasks WHERE ID=?")
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer stmt.Close()
+
+			_, err = stmt.Exec(*id)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("Task %d deleted successfully!\n", *id)
 		}
 	}
 }
