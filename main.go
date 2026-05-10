@@ -5,9 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	_ "modernc.org/sqlite"
 	"strings"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 type Task struct {
